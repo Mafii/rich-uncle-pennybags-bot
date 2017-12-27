@@ -12,7 +12,6 @@
 #id = "The name used for access on the CoinMarketCap API. Default: [short_name.name] in kebab-case"
 #conversion_symbol = "The symbol used for access on the CoinMarketCap API. Default: [short_name] in lowercase"
 
-
 [coins]
 usd = "U.S. Dollar"
 eur = "Euro"
@@ -22,6 +21,7 @@ eth = "Ethereum"
 btc = "Bitcoin"
 req = "Request Network"
 iot = "Iota"
+edo = "Eidoo"
 
 [coins.qash]
 long_name = "QASH"

@@ -2,9 +2,10 @@ use rocket::State;
 use rocket_contrib::Json;
 
 use telegram::Api as TelegramApi;
-use telegram::types::*;
+use telegram::model::*;
 use exchange::Api as ExchangeApi;
 use model::Coin;
+use model::toml::Name;
 use error::*;
 
 type Exchanges = Vec<Exchange>;
@@ -23,8 +24,8 @@ pub fn receive_update(
                 let text = &text[1..];
                 let chat_id = message.chat.id;
                 if text == "help" {
-                    if handle_help(chat_id, &telegram).is_err() {
-                        println!("Failed to send help");
+                    if let Err(e) = handle_help(&coins, chat_id, &telegram) {
+                        println!("Failed to send help: {}", e);
                     }
                 } else {
                     let mut symbols: Vec<_> = text.split('_').collect();
@@ -32,10 +33,25 @@ pub fn receive_update(
                         symbols.push("usd");
                     }
                     if symbols.len() == 2 {
-                        let pair = (
-                            parse_coin(&coins, symbols[0])?,
-                            parse_coin(&coins, symbols[1])?,
-                        );
+                        let first_coin = parse_coin(&coins, symbols[0]);
+                        if let Err(e) = first_coin {
+                            println!(
+                                "Failed to parse first coin: \"{}\", error: {}",
+                                symbols[0], e
+                            );
+                            return Ok(());
+                        }
+                        let first_coin = first_coin.unwrap();
+                        let second_coin = parse_coin(&coins, symbols[1]);
+                        if let Err(e) = second_coin {
+                            println!(
+                                "Failed to parse second coin: \"{}\", error: {}",
+                                symbols[1], e
+                            );
+                            return Ok(());
+                        }
+                        let second_coin = second_coin.unwrap();
+                        let pair = (first_coin, second_coin);
                         let inverse = (pair.1.clone(), pair.0.clone());
                         for exchange in exchanges.iter() {
                             // try both combinations
@@ -66,38 +82,32 @@ fn parse_coin(coins: &Vec<Coin>, symbol: &str) -> Result<Coin> {
         .ok_or(Error::Parse(symbol.to_string()))
 }
 
-fn handle_help(chat_id: i64, telegram: &TelegramApi) -> Result<()> {
-    telegram.send_message(chat_id, "\
-        Simply use /<coinpair>. If you only specify one coin, it assumes you want it in USD. Examples:\n\
-        \n\
-        /eth Returns the current ETH/USD rate\n\
-        /ethbtc Returns the current ETH/BTC rate\n\
-        \n\
-        Available coins:\n\
-        /btc\tBitcoin\n\
-        /ltc\tLitecoin\n\
-        /eth\tEthereum\n\
-        /etc\tEthereum Classic\n\
-        /zec\tZCash\n\
-        /xmr\tMonero\n\
-        /das\tDash\n\
-        /xrp\tRipple\n\
-        /iot\tIota\n\
-        /eos\tEOS\n\
-        /san\tSantiment\n\
-        /omg\tOmiseGO\n\
-        /bch\tBcash\n\
-        /neo\tNEO\n\
-        /etp\tETP\n\
-        /qtu\tQtum\n\
-        /avt\tAventus\n\
-        /edo\tEidoo\n\
-        /btg\tBTG\n\
-        /dat\tStreamr\n\
-        /rrt\tRecovery Right Tokens\n\
-        \n\
-        Please tell @Kekmeister if you want any additional features.\
-    ")?;
+fn handle_help(coins: &Vec<Coin>, chat_id: i64, telegram: &TelegramApi) -> Result<()> {
+    let mut msg = "
+Simply use `/firstcoin_secondcoin`. If you only specify one coin, the bot assumes you want it in USD. Examples:
+
+`/eth` Returns the current Ethereum to U.S. Dollar rate
+`/eth_btc` Returns the current Ethereum to Bitcoin rate
+`/btc_chf` Returns the current Bitcoin to Swiss Franc rate
+
+Available currencies:
+"
+        .to_string();
+    let footer = "
+You can add a new currency yourself by adding it to the [coinfile](https://github.com/SirRade/rich-uncle-pennybags-bot/blob/master/Coins.toml)
+Please tell @Kekmeister if you want any additional features.
+
+If you're german speaking, feel free to [join us](https://t.me/joinchat/Azh980Rug594nvfzLEQsIw) 🙂";
+    for coin in coins {
+        let long_name = match coin.name {
+            Name::Simple(ref long_name) => &long_name,
+            Name::Detailed(ref detailed_name) => &detailed_name.long_name,
+        };
+        let command = format!("- {} _{}_\n", coin.short_name, long_name);
+        msg.push_str(&command)
+    }
+    msg.push_str(footer);
+    telegram.send_message(chat_id, &msg)?;
     Ok(())
 }
 
